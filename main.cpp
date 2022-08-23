@@ -268,7 +268,7 @@ int main( int argc, char **argv )
                 {
                     if ( lineCursor == 0 )
                     {
-                        fprintf( outputFile, "\\begin{figure}[h]\n\\centering\n\\includegraphics[width=\\textwidth]{" );
+                        fprintf( outputFile, "\\begin{figure}[h]\n\\centering\n\\" );
 
                         char nameBuffer[ 128 ] = { 0 };
                         ++lineCursor;
@@ -281,7 +281,7 @@ int main( int argc, char **argv )
                         }
                         ++lineCursor;
                         lineBuffer[ lineLength - 1 ] = '\0';
-                        fprintf( outputFile, "}\n\\caption{%s}\n\\label{%s}\n\\end{figure}\n",
+                        fprintf( outputFile, "}\n\\includegraphics[width=\\textwidth]{%s}\n\\label{%s}\n\\end{figure}\n",
                                  &lineBuffer[ lineCursor ], nameBuffer );
                         skipLine = true;
                     }
@@ -299,6 +299,9 @@ int main( int argc, char **argv )
                     }
                 }
                 break;
+
+                case '`':
+                    if ( lineCursor == 0 )
 
                 default:
                 {
