@@ -114,6 +114,9 @@ int main( int argc, char **argv )
     bool listOpened = false;
     bool isItemize = true;
     int openedLists = 0;
+
+    fprintf( outputFile, "\\documentclass{article} \n\\usepackage[utf8]{inputenc} \n\\title{} \n\\date\n" );
+    fprintf( outputFile, "\\begin{document} \n\n" );
     while ( inputFileCursor < inputFileSize )
     {
         lineLength = ReadLine( inputFileText, lineBuffer, inputFileCursor );
@@ -315,6 +318,7 @@ int main( int argc, char **argv )
         previousIndentationLevel = currentIndentationLevel;
     }
 
+    fprintf( outputFile, "\n\n\\end{document} " );
     printf( "File %s generated successfully!\n", outputFileName );
     return 0;
 }
