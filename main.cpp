@@ -8,8 +8,8 @@ using namespace std;
 void printUsageInfo()
 {
     cout << "Usage:\n";
-    cout << "1. Input Markdown file name\n";
-    cout << "2. Output file name\n";
+    cout << "1. Ingresar el nombre del archivo markdown\n";
+    cout << "2. Salida archivo\n";
 }
 
 int readLine(const string &fileBuffer, string &lineBuffer, int offset)
