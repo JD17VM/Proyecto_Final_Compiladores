@@ -1,314 +1,295 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "utils/utils.h"
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include "utils.h"
 
 void PrintArgumentsInfo()
 {
-    printf( "The arguments should be:\n" );
-    printf( "1. Name of the Markdown file to convert\n" );
-    printf( "2. Output file name\n" );
+    std::cout << "Los argumentos que se deben poner son:\n";
+    std::cout << "1. Nombre del archivo MD\n";
+    std::cout << "2. Nombre del archivo de Salida\n";
 }
 
-int ReadLine( char *fileBuffer, char *lineBuffer, int fileOffset )
+size_t ReadLine(const std::string &fileBuffer, std::string &lineBuffer, size_t fileOffset)
 {
-    int length = 0;
-    while ( fileBuffer[ fileOffset + length ] != '\n' )
+    size_t length = 0;
+    while (fileOffset + length < fileBuffer.size() && fileBuffer[fileOffset + length] != '\n')
     {
         ++length;
     }
-
-    ++length; // include '\n'
-    memcpy( lineBuffer, &fileBuffer[ fileOffset ], length );
-    return length;
+    lineBuffer = fileBuffer.substr(fileOffset, length);
+    return length + 1; // include '\n'
 }
 
-int EatLeadingSpaces( char *line )
+int EatLeadingSpaces(const std::string &line)
 {
     int result = 0;
-    while ( line[ result ] == ' ' )
+    while (result < line.size() && line[result] == ' ')
     {
         ++result;
     }
     return result;
 }
 
-inline void IndentFile( FILE *file, int level )
+void IndentFile(std::ofstream &file, int level)
 {
-    for ( int i = 0; i < level; ++i )
+    for (int i = 0; i < level; ++i)
     {
-        fprintf( file, "    " );
+        file << "    ";
     }
 }
 
-int main( int argc, char **argv )
+void ProcessMarkdown(std::ofstream &outputFile, const std::string &line, int &lineCursor)
 {
-    if ( argc < 3 )
+    while (lineCursor < line.length())
     {
-        printf( "Provided too few arguments.\n" );
+        if (line[lineCursor] == '*' && line[lineCursor + 1] == '*')
+        {
+            outputFile << "\\textbf{";
+            lineCursor += 2;
+            while (lineCursor < line.length() && !(line[lineCursor] == '*' && line[lineCursor + 1] == '*'))
+            {
+                outputFile << line[lineCursor];
+                ++lineCursor;
+            }
+            outputFile << "}";
+            lineCursor += 2;
+        }
+        else if (line[lineCursor] == '*')
+        {
+            outputFile << "\\textit{";
+            ++lineCursor;
+            while (lineCursor < line.length() && line[lineCursor] != '*')
+            {
+                outputFile << line[lineCursor];
+                ++lineCursor;
+            }
+            outputFile << "}";
+            ++lineCursor;
+        }
+        else
+        {
+            outputFile << line[lineCursor];
+            ++lineCursor;
+        }
+    }
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 3)
+    {
+        std::cerr << "Provided too few arguments.\n";
         PrintArgumentsInfo();
         return -1;
     }
-    else if ( argc > 3 )
+    else if (argc > 3)
     {
-        printf( "Provided too many arguments.\n" );
+        std::cerr << "Provided too many arguments.\n";
         PrintArgumentsInfo();
         return -1;
     }
 
-    char *inputFileName = argv[ 1 ];
-    char *outputFileName = argv[ 2 ];
+    std::string inputFileName = argv[1];
+    std::string outputFileName = argv[2];
 
-    FILE *inputFile;
-    fopen_s( &inputFile, inputFileName, "rt" );
-
-    if ( !inputFile )
+    std::ifstream inputFile(inputFileName);
+    if (!inputFile)
     {
-        printf( "Failed to open file: %s.\n", inputFileName );
+        std::cerr << "Failed to open file: " << inputFileName << ".\n";
         return -1;
     }
 
-    fseek( inputFile, 0, SEEK_END );
-    int inputFileSize = ( int ) ftell( inputFile );
-    fseek( inputFile, 0, SEEK_SET );
+    std::stringstream buffer;
+    buffer << inputFile.rdbuf();
+    std::string inputFileText = buffer.str();
+    inputFile.close();
 
-    if ( inputFileSize == 0 )
+    if (inputFileText.empty())
     {
-        printf( "Input file size is 0.\n" );
-        fclose( inputFile );
+        std::cerr << "Input file size is 0.\n";
         return -1;
     }
 
-    char *inputFileText = ( char * ) malloc( ( inputFileSize + 1 ) * sizeof( char ) );
-    defer { free( inputFileText ); };
-    int countRead = ( int ) fread( inputFileText, sizeof( char ), inputFileSize, inputFile );
-
-    if ( countRead < inputFileSize )
+    std::ofstream outputFile(outputFileName);
+    if (!outputFile)
     {
-        inputFileSize = countRead;
-        inputFileText = ( char * ) realloc( inputFileText, countRead + 1 );
-    }
-
-    inputFileText[ countRead ] = '\0';
-    fclose( inputFile );
-
-    FILE *outputFile;
-    fopen_s( &outputFile, outputFileName, "w" );
-
-    if ( !outputFile )
-    {
-        printf( "Failed to create file: %s\n", outputFileName );
+        std::cerr << "Failed to create file: " << outputFileName << "\n";
         return -1;
     }
 
-    defer { fclose( outputFile ); };
+    defer { outputFile.close(); };
 
-    char *lineBuffer = ( char * ) malloc( 200 * sizeof( char ) );
-    defer { free( lineBuffer ); };
-
-    int inputFileCursor = 0;
-    int lineLength = -1;
-    int lineCount = 0;
+    size_t inputFileCursor = 0;
     int currentIndentationLevel = 0;
     int previousIndentationLevel = -1;
     bool listOpened = false;
     bool isItemize = true;
     int openedLists = 0;
 
-    fprintf( outputFile, "\\documentclass{article} \n\\usepackage[utf8]{inputenc} \n\\title{} \n\\date\n" );
-    fprintf( outputFile, "\\begin{document} \n\n" );
-    while ( inputFileCursor < inputFileSize )
+    while (inputFileCursor < inputFileText.size())
     {
-        lineLength = ReadLine( inputFileText, lineBuffer, inputFileCursor );
+        std::string line;
+        size_t lineLength = ReadLine(inputFileText, line, inputFileCursor);
         inputFileCursor += lineLength;
-        lineBuffer[ lineLength ] = '\0';
-        ++lineCount;
-        // printf( "%s", lineBuffer );
 
-        int lineCursor = EatLeadingSpaces( lineBuffer );
-        currentIndentationLevel = lineCursor / 4;
-        // printf( "Line: %d, leading spaces: %d\n", lineCount, lineCursor );
-        bool skipLine = false;
-        while ( lineBuffer[ lineCursor ] && !skipLine )
+        if (line.empty())
         {
-            char currentChar = lineBuffer[ lineCursor ];
-            skipLine = false;
-            switch ( currentChar )
-            {
-                case '\n':
-                {
-                    if ( lineLength == 1 && listOpened )
-                    {
-                        for ( int i = 0; i < openedLists + 1; ++i )
-                        {
-                            IndentFile( outputFile, openedLists - i );
-                            fprintf( outputFile, isItemize ? "\\end{itemize}\n\n" : "\\end{enumerate}\n\n" );
-                        }
-                        listOpened = false;
-                        openedLists = 0;
-                    }
-                    else
-                    {
-                        fprintf( outputFile, "%c", currentChar );
-                    }
-                }
-                break;
+            outputFile << "\n";
+            continue;
+        }
 
+        int lineCursor = EatLeadingSpaces(line);
+        currentIndentationLevel = lineCursor / 4;
+        bool skipLine = false;
+
+        while (lineCursor < line.length() && !skipLine)
+        {
+            char currentChar = line[lineCursor];
+            skipLine = false;
+            switch (currentChar)
+            {
                 case '#':
                 {
                     skipLine = true;
-                    if ( lineCursor == 0 )
+                    if (lineCursor == 0)
                     {
-                        lineBuffer[ lineLength - 1 ] = '\0';
-                        if ( lineBuffer[ lineCursor + 1 ] == '#' && lineBuffer[ lineCursor + 2 ] == '#' &&
-                             ( lineBuffer[ lineCursor + 3 ] == ' ' || ( lineBuffer[ lineCursor + 3 ] == '*' &&
-                                                                        lineBuffer[ lineCursor + 4 ] == ' ' ) ) )
+                        if (line[lineCursor + 1] == '#' && line[lineCursor + 2] == '#' &&
+                            (line[lineCursor + 3] == ' ' || (line[lineCursor + 3] == '*' && line[lineCursor + 4] == ' ')))
                         {
-                            bool unnumbered = lineBuffer[ lineCursor + 3 ] == '*';
-                            fprintf( outputFile, "\\subsubsection%s{%s}\n", unnumbered ? "*" : "", &lineBuffer[ lineCursor + 4 + unnumbered ] );
+                            bool unnumbered = line[lineCursor + 3] == '*';
+                            outputFile << "\\subsubsection" << (unnumbered ? "*" : "") << "{" << line.substr(lineCursor + 4 + unnumbered) << "}\n";
                         }
-                        else if ( lineBuffer[ lineCursor + 1 ] == '#' &&
-                                  ( lineBuffer[ lineCursor + 2 ] == ' ' || ( lineBuffer[ lineCursor + 2 ] == '*' &&
-                                                                             lineBuffer[ lineCursor + 3 ] == ' ' ) ) )
+                        else if (line[lineCursor + 1] == '#' &&
+                                 (line[lineCursor + 2] == ' ' || (line[lineCursor + 2] == '*' && line[lineCursor + 3] == ' ')))
                         {
-                            bool unnumbered = lineBuffer[ lineCursor + 2 ] == '*';
-                            fprintf( outputFile, "\\subsection%s{%s}\n", unnumbered ? "*" : "", &lineBuffer[ lineCursor + 3 + unnumbered ] );
+                            bool unnumbered = line[lineCursor + 2] == '*';
+                            outputFile << "\\subsection" << (unnumbered ? "*" : "") << "{" << line.substr(lineCursor + 3 + unnumbered) << "}\n";
                         }
-                        else if ( lineBuffer[ lineCursor + 1 ] == ' ' || ( lineBuffer[ lineCursor + 1 ] == '*' &&
-                                                                           lineBuffer[ lineCursor + 2 ] == ' ' ) )
+                        else if (line[lineCursor + 1] == ' ' || (line[lineCursor + 1] == '*' && line[lineCursor + 2] == ' '))
                         {
-                            bool unnumbered = lineBuffer[ lineCursor + 1 ] == '*';
-                            fprintf( outputFile, "\\section%s{%s}\n", unnumbered ? "*" : "", &lineBuffer[ lineCursor + 2 + unnumbered ] );
+                            bool unnumbered = line[lineCursor + 1] == '*';
+                            outputFile << "\\section" << (unnumbered ? "*" : "") << "{" << line.substr(lineCursor + 2 + unnumbered) << "}\n";
                         }
                     }
                     else
                     {
                         skipLine = false;
-                        lineBuffer[ lineLength - 1 ] = '\n';
-                        fprintf( outputFile, "%c", currentChar );
+                        outputFile << currentChar;
                     }
                 }
                 break;
 
-                case '-':
+                case '*':
                 {
-                    if ( currentIndentationLevel == lineCursor / 4 && lineBuffer[ lineCursor + 1 ] != '-' ) // first character in line
+                    if (currentIndentationLevel == lineCursor / 4 && line[lineCursor + 1] != '*') // first character in line
                     {
                         isItemize = true;
-                        if ( lineBuffer[ lineCursor + 1 ] == '&' )
+                        if (line[lineCursor + 1] == '&')
                         {
                             isItemize = false;
                             ++lineCursor;
                         }
 
-                        if ( !listOpened )
+                        if (!listOpened)
                         {
-                            IndentFile( outputFile, currentIndentationLevel );
-                            fprintf( outputFile, isItemize ? "\\begin{itemize}\n" : "\\begin{enumerate}\n" );
+                            IndentFile(outputFile, currentIndentationLevel);
+                            outputFile << (isItemize ? "\\begin{itemize}\n" : "\\begin{enumerate}\n");
                             listOpened = true;
-                            fprintf( outputFile, "\\item%s", &lineBuffer[ lineCursor + 1 ] );
+                            outputFile << "\\item ";
+                            lineCursor++;
+                            ProcessMarkdown(outputFile, line, lineCursor);
+                            outputFile << "\n";
                             skipLine = true;
                         }
                         else
                         {
-                            if ( currentIndentationLevel > previousIndentationLevel )
+                            if (currentIndentationLevel > previousIndentationLevel)
                             {
-                                IndentFile( outputFile, currentIndentationLevel );
-                                fprintf( outputFile, isItemize ? "\\begin{itemize}\n" : "\\begin{enumerate}\n" );
+                                IndentFile(outputFile, currentIndentationLevel);
+                                outputFile << (isItemize ? "\\begin{itemize}\n" : "\\begin{enumerate}\n");
                                 ++openedLists;
                             }
-                            else if ( currentIndentationLevel < previousIndentationLevel )
+                            else if (currentIndentationLevel < previousIndentationLevel)
                             {
-                                IndentFile( outputFile, previousIndentationLevel );
-                                fprintf( outputFile, isItemize ? "\\end{itemize}\n" : "\\end{enumerate}\n" );
+                                IndentFile(outputFile, previousIndentationLevel);
+                                outputFile << (isItemize ? "\\end{itemize}\n" : "\\end{enumerate}\n");
                                 --openedLists;
                             }
-                            IndentFile( outputFile, currentIndentationLevel );
-                            fprintf( outputFile, "\\item%s", &lineBuffer[ lineCursor + 1 ] );
+                            IndentFile(outputFile, currentIndentationLevel);
+                            outputFile << "\\item ";
+                            lineCursor++;
+                            ProcessMarkdown(outputFile, line, lineCursor);
+                            outputFile << "\n";
                             skipLine = true;
                         }
                     }
-                    else if ( lineBuffer[ lineCursor + 1 ] == '-' )
-                    {
-                        fprintf( outputFile, "\\textbf{" );
-                        lineCursor += 2;
-                        while ( !( lineBuffer[ lineCursor ] == '-' && lineBuffer[ lineCursor + 1 ] == '-' ) )
-                        {
-                            fprintf( outputFile, "%c", lineBuffer[ lineCursor ] );
-                            ++lineCursor;
-                        }
-                        fprintf( outputFile, "}" );
-                        ++lineCursor;
-                    }
                     else
                     {
-                        fprintf( outputFile, "%c", currentChar );
+                        ProcessMarkdown(outputFile, line, lineCursor);
                     }
                 }
                 break;
 
                 case '_':
                 {
-                    if ( lineCursor == 0 || lineBuffer[ lineCursor - 1 ] == ' ' )
+                    if (lineCursor == 0 || line[lineCursor - 1] == ' ')
                     {
-                        fprintf( outputFile, "\\emph{" );
+                        outputFile << "\\emph{";
                         ++lineCursor;
-                        while ( lineBuffer[ lineCursor ] != '_' )
+                        while (lineCursor < line.length() && line[lineCursor] != '_')
                         {
-                            fprintf( outputFile, "%c", lineBuffer[ lineCursor ] );
+                            outputFile << line[lineCursor];
                             ++lineCursor;
                         }
-                        fprintf( outputFile, "}" );
+                        outputFile << "}";
+                        ++lineCursor;
                     }
                     else
                     {
-                        fprintf( outputFile, "%c", lineBuffer[ lineCursor ] );
+                        outputFile << currentChar;
                     }
                 }
                 break;
 
                 case '@':
                 {
-                    if ( lineCursor == 0 )
+                    if (lineCursor == 0)
                     {
-                        fprintf( outputFile, "\\begin{figure}[h]\n\\centering\n\\" );
+                        outputFile << "\\begin{figure}[h]\n\\centering\n\\includegraphics[width=\\textwidth]{";
 
-                        char nameBuffer[ 128 ] = { 0 };
+                        std::string nameBuffer;
                         ++lineCursor;
                         int start = lineCursor;
-                        while ( lineBuffer[ lineCursor ] != ' ' )
+                        while (lineCursor < line.length() && line[lineCursor] != ' ')
                         {
-                            fprintf( outputFile, "%c", lineBuffer[ lineCursor ] );
-                            nameBuffer[ lineCursor - start ] = lineBuffer[ lineCursor ];
+                            outputFile << line[lineCursor];
+                            nameBuffer += line[lineCursor];
                             ++lineCursor;
                         }
                         ++lineCursor;
-                        lineBuffer[ lineLength - 1 ] = '\0';
-                        fprintf( outputFile, "}\n\\includegraphics[width=\\textwidth]{%s}\n\\label{%s}\n\\end{figure}\n",
-                                 &lineBuffer[ lineCursor ], nameBuffer );
+                        outputFile << "}\n\\caption{" << line.substr(lineCursor) << "}\n\\label{" << nameBuffer << "}\n\\end{figure}\n";
                         skipLine = true;
                     }
                     else
                     {
-                        fprintf( outputFile, "\\ref{" );
+                        outputFile << "\\ref{";
                         ++lineCursor;
-                        while ( lineBuffer[ lineCursor ] == '_' ||
-                                ( lineBuffer[ lineCursor ] >= 'a' && lineBuffer[ lineCursor <= 'z' ] ) )
+                        while (lineCursor < line.length() && (line[lineCursor] == '_' ||
+                               (line[lineCursor] >= 'a' && line[lineCursor] <= 'z')))
                         {
-                            fprintf( outputFile, "%c", lineBuffer[ lineCursor ] );
+                            outputFile << line[lineCursor];
                             ++lineCursor;
                         }
-                        fprintf( outputFile, "}%c", lineBuffer[ lineCursor ] );
+                        outputFile << "}" << line[lineCursor];
                     }
                 }
                 break;
 
-                case '`':
-                    if ( lineCursor == 0 )
-
                 default:
                 {
-                    fprintf( outputFile, "%c", currentChar );
+                    outputFile << currentChar;
                 }
                 break;
             }
@@ -318,7 +299,16 @@ int main( int argc, char **argv )
         previousIndentationLevel = currentIndentationLevel;
     }
 
-    fprintf( outputFile, "\n\n\\end{document} " );
-    printf( "File %s generated successfully!\n", outputFileName );
+    // Close any open lists
+    if (listOpened)
+    {
+        for (int i = 0; i < openedLists + 1; ++i)
+        {
+            IndentFile(outputFile, openedLists - i);
+            outputFile << (isItemize ? "\\end{itemize}\n\n" : "\\end{enumerate}\n\n");
+        }
+    }
+
+    std::cout << "File " << outputFileName << " generated successfully!\n";
     return 0;
 }

@@ -43,30 +43,28 @@ typedef double float64;
 
 #ifdef __cplusplus
 
-template< typename T >
+template<typename T>
 struct ExitScope
 {
     T lambda;
-    ExitScope( T lambda ) :
-        lambda( lambda ) { }
+    ExitScope(T lambda) : lambda(lambda) {}
     ~ExitScope() { lambda(); }
-    ExitScope( const ExitScope & );
-
-private:
-    ExitScope &operator=( const ExitScope & );
+    ExitScope(const ExitScope &) = delete;
+    ExitScope &operator=(const ExitScope &) = delete;
 };
 
 class ExitScopeHelp
 {
 public:
-    template< typename T >
-    ExitScope< T > operator+( T t )
+    template<typename T>
+    ExitScope<T> operator+(T t)
     {
         return t;
     }
 };
 
-    #define defer const auto &CONCAT( defer__, __LINE__ ) = ExitScopeHelp() + [ & ]()
+#define defer const auto &CONCAT(defer__, __LINE__) = ExitScopeHelp() + [&]()
+
 #endif
 
 #endif
